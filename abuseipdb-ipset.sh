@@ -85,7 +85,7 @@ fi
 
 ### Query abuseipdb.com
 # Get the blacklist and store in an array
-_blacklist=( $(curl -sS -G https://api.abuseipdb.com/api/v2/blacklist \
+_blacklist=( $(curl -fsS -G https://api.abuseipdb.com/api/v2/blacklist \
   -d confidenceMinimum=$confidence \
   -d plaintext \
   -H "Key: $key" \
