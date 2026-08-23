@@ -44,7 +44,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 #===============================================================================
- 
+
 # Location of ipset binary
 ipset_bin=/sbin/ipset
 
@@ -110,7 +110,7 @@ do
     if [ "$_ip" != "${_ip#*[0-9].[0-9]}" ]; then
         # add/update IPv4 ipset
         ${ipset_bin} add ${ipset_v4} "${_ip}" timeout ${timeout} -exist || { echo "$0: Unable to add ${_ip} to ${ipset_v4}, exiting early." >&2; exit 2; }
-        
+
     elif [ "$_ip" != "${_ip#*:[0-9a-fA-F]}" ]; then
         # add/update IPv6 ipset
         ${ipset_bin} add ${ipset_v6} "${_ip}" timeout ${timeout} -exist || { echo "$0: Unable to add ${_ip} to ${ipset_v6}, exiting early." >&2; exit 2; }
