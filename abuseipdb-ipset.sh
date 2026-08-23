@@ -66,8 +66,11 @@ confidence=90
 #   existing timeout)
 timeout=604800      # REQUIRED! - default is 7 days
 
-# Name of ipset to use
-ipset_v4=abuseipdb_v4        # REQUIRED!
+# Name of ipset to use.
+# Leave one of these blank to disable that IP version entirely: the
+# corresponding ipset will not be created/populated, and the curl request
+# will be restricted server-side to the other IP version only.
+ipset_v4=abuseipdb_v4
 ipset_v6=abuseipdb_v6
 
 ##################
@@ -75,30 +78,43 @@ ipset_v6=abuseipdb_v6
 ##################
 
 # required parameters
-if [[ ! ${ipset_v4} || ! ${ipset_v6} || ! ${timeout} || ! ${ipset_bin} || ! ${key} || ! ${confidence} ]]
+if [[ ! ${timeout} || ! ${ipset_bin} || ! ${key} || ! ${confidence} ]]
 then
     echo "$0: Required parameter is missing! Edit this file for further info." >&2
     exit 1
 fi
 
+if [[ ! ${ipset_v4} && ! ${ipset_v6} ]]
+then
+    echo "$0: At least one of ipset_v4 or ipset_v6 must be set." >&2
+    exit 1
+fi
 
+# If only one IP version is enabled, ask AbuseIPDB to filter server-side too.
+extra_curl_opts=()
+if [ -z "${ipset_v4}" ]; then
+    extra_curl_opts+=(-d ipVersion=6)
+elif [ -z "${ipset_v6}" ]; then
+    extra_curl_opts+=(-d ipVersion=4)
+fi
 
 ### Query abuseipdb.com
 # Get the blacklist and store in an array
 _blacklist=( $(curl -fsS -G https://api.abuseipdb.com/api/v2/blacklist \
   -d confidenceMinimum=$confidence \
   -d plaintext \
+  "${extra_curl_opts[@]}" \
   -H "Key: $key" \
   -H "Accept: application/json") )  || { echo "$0: Unable to download blacklist." >&2; exit 1; }
 
 
-### Setup our ipsets, creating them if they don't exist ###
-if ! ${ipset_bin} list ${ipset_v4} -name 2>/dev/null >/dev/null
+### Setup our ipsets, creating them if they don't exist (and if enabled) ###
+if [ -n "${ipset_v4}" ] && ! ${ipset_bin} list ${ipset_v4} -name 2>/dev/null >/dev/null
 then
     ${ipset_bin} create ${ipset_v4} hash:ip timeout ${timeout} -exist || { echo "$0: Unable to create ipset: ${ipset_v4}" >&2; exit 2; }
 fi
 
-if ! ${ipset_bin} list ${ipset_v6} -name 2>/dev/null >/dev/null
+if [ -n "${ipset_v6}" ] && ! ${ipset_bin} list ${ipset_v6} -name 2>/dev/null >/dev/null
 then
     ${ipset_bin} create ${ipset_v6} hash:ip family inet6 timeout ${timeout} -exist || { echo "$0: Unable to create ipset: ${ipset_v6}" >&2; exit 2; }
 fi
@@ -107,11 +123,11 @@ fi
 # Add all retrieved ips to $_ipset, updating the timeout on duplicates
 for _ip in "${_blacklist[@]}"
 do
-    if [ "$_ip" != "${_ip#*[0-9].[0-9]}" ]; then
+    if [ -n "${ipset_v4}" ] && [ "$_ip" != "${_ip#*[0-9].[0-9]}" ]; then
         # add/update IPv4 ipset
         ${ipset_bin} add ${ipset_v4} "${_ip}" timeout ${timeout} -exist || { echo "$0: Unable to add ${_ip} to ${ipset_v4}, exiting early." >&2; exit 2; }
 
-    elif [ "$_ip" != "${_ip#*:[0-9a-fA-F]}" ]; then
+    elif [ -n "${ipset_v6}" ] && [ "$_ip" != "${_ip#*:[0-9a-fA-F]}" ]; then
         # add/update IPv6 ipset
         ${ipset_bin} add ${ipset_v6} "${_ip}" timeout ${timeout} -exist || { echo "$0: Unable to add ${_ip} to ${ipset_v6}, exiting early." >&2; exit 2; }
     else
