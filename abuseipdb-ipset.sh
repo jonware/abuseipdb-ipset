@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script for blocking IPs which are listed on the AbuseIPDB blacklist
+# Script for blocking IPs which are listed on the AbuseIPDB blocklist
 #   via ipsets.
 #
 # - THIS SCRIPT DOES NOT BLOCK ANYTHING -
@@ -55,7 +55,7 @@ key=
 confidence=90
 
 # This is how long (in seconds) an ip will remain in the ipset after it
-#   stops showing up in the AbuseIPDB blacklist. It should be longer than
+#   stops showing up in the AbuseIPDB blocklist. It should be longer than
 #   the time between executions of this script (double, at least) and long
 #   enough when combined with age above that occasional offenders don't get
 #   removed from the ipset prematurely.
@@ -99,14 +99,13 @@ elif [ -z "${ipset_v6}" ]; then
 fi
 
 ### Query abuseipdb.com
-# Get the blacklist and store in an array
-_blacklist=( $(curl -fsS -G https://api.abuseipdb.com/api/v2/blacklist \
+# Get the blocklist and store in an array
+_blocklist=( $(curl -fsS -G https://api.abuseipdb.com/api/v2/blocklist \
   -d confidenceMinimum=$confidence \
   -d plaintext \
   "${extra_curl_opts[@]}" \
   -H "Key: $key" \
-  -H "Accept: application/json") )  || { echo "$0: Unable to download blacklist." >&2; exit 1; }
-
+  -H "Accept: application/json") ) || { echo "$0: Unable to download blocklist." >&2; exit 1; }
 
 ### Setup our ipsets, creating them if they don't exist (and if enabled) ###
 if [ -n "${ipset_v4}" ] && ! ${ipset_bin} list ${ipset_v4} -name 2>/dev/null >/dev/null
@@ -119,14 +118,12 @@ then
     ${ipset_bin} create ${ipset_v6} hash:ip family inet6 timeout ${timeout} -exist || { echo "$0: Unable to create ipset: ${ipset_v6}" >&2; exit 2; }
 fi
 
-
 # Add all retrieved ips to $_ipset, updating the timeout on duplicates
-for _ip in "${_blacklist[@]}"
+for _ip in "${_blocklist[@]}"
 do
     if [ -n "${ipset_v4}" ] && [ "$_ip" != "${_ip#*[0-9].[0-9]}" ]; then
         # add/update IPv4 ipset
         ${ipset_bin} add ${ipset_v4} "${_ip}" timeout ${timeout} -exist || { echo "$0: Unable to add ${_ip} to ${ipset_v4}, exiting early." >&2; exit 2; }
-
     elif [ -n "${ipset_v6}" ] && [ "$_ip" != "${_ip#*:[0-9a-fA-F]}" ]; then
         # add/update IPv6 ipset
         ${ipset_bin} add ${ipset_v6} "${_ip}" timeout ${timeout} -exist || { echo "$0: Unable to add ${_ip} to ${ipset_v6}, exiting early." >&2; exit 2; }
