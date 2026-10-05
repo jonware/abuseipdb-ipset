@@ -73,12 +73,18 @@ timeout=604800      # REQUIRED! - default is 7 days
 ipset_v4=abuseipdb_v4
 ipset_v6=abuseipdb_v6
 
+# Directory where a backup of each ipset is saved after every successful
+# update. On a later run, if an ipset is missing and its backup here is not
+# older than $timeout, the ipset is restored from that backup instead of
+# being (re)created empty.
+backup_dir=/var/spool
+
 ##################
 ## BEGIN SCRIPT ##
 ##################
 
 # required parameters
-if [[ ! ${timeout} || ! ${ipset_bin} || ! ${key} || ! ${confidence} ]]
+if [[ ! ${timeout} || ! ${ipset_bin} || ! ${key} || ! ${confidence} || ! ${backup_dir} ]]
 then
     echo "$0: Required parameter is missing! Edit this file for further info." >&2
     exit 1
@@ -107,15 +113,29 @@ _blocklist=( $(curl -fsS -G https://api.abuseipdb.com/api/v2/blacklist \
   -H "Key: $key" \
   -H "Accept: application/json") ) || { echo "$0: Unable to download blocklist." >&2; exit 1; }
 
-### Setup our ipsets, creating them if they don't exist (and if enabled) ###
-if [ -n "${ipset_v4}" ] && ! ${ipset_bin} list ${ipset_v4} -name 2>/dev/null >/dev/null
-then
-    ${ipset_bin} create ${ipset_v4} hash:ip timeout ${timeout} -exist || { echo "$0: Unable to create ipset: ${ipset_v4}" >&2; exit 2; }
+### Setup our ipsets: restore from a recent backup, or create empty (and if enabled) ###
+if [ -n "${ipset_v4}" ]; then
+    backup_v4="${backup_dir}/ipset-${ipset_v4}"
+    if ! ${ipset_bin} list ${ipset_v4} -name 2>/dev/null >/dev/null
+    then
+        if [ -f "${backup_v4}" ] && [ -n "$(find "${backup_v4}" -mmin -$((timeout/60)))" ]; then
+            ${ipset_bin} restore -file "${backup_v4}" || { echo "$0: Unable to restore ipset ${ipset_v4} from ${backup_v4}" >&2; exit 2; }
+        else
+            ${ipset_bin} create ${ipset_v4} hash:ip timeout ${timeout} -exist || { echo "$0: Unable to create ipset: ${ipset_v4}" >&2; exit 2; }
+        fi
+    fi
 fi
 
-if [ -n "${ipset_v6}" ] && ! ${ipset_bin} list ${ipset_v6} -name 2>/dev/null >/dev/null
-then
-    ${ipset_bin} create ${ipset_v6} hash:ip family inet6 timeout ${timeout} -exist || { echo "$0: Unable to create ipset: ${ipset_v6}" >&2; exit 2; }
+if [ -n "${ipset_v6}" ]; then
+    backup_v6="${backup_dir}/ipset-${ipset_v6}"
+    if ! ${ipset_bin} list ${ipset_v6} -name 2>/dev/null >/dev/null
+    then
+        if [ -f "${backup_v6}" ] && [ -n "$(find "${backup_v6}" -mmin -$((timeout/60)))" ]; then
+            ${ipset_bin} restore -file "${backup_v6}" || { echo "$0: Unable to restore ipset ${ipset_v6} from ${backup_v6}" >&2; exit 2; }
+        else
+            ${ipset_bin} create ${ipset_v6} hash:ip family inet6 timeout ${timeout} -exist || { echo "$0: Unable to create ipset: ${ipset_v6}" >&2; exit 2; }
+        fi
+    fi
 fi
 
 # Add all retrieved ips to $_ipset, updating the timeout on duplicates
@@ -131,5 +151,15 @@ do
         echo "Unrecognised IP format '$_ip'"
     fi
 done
+
+# Persist the freshly-updated ipsets, so a future run can restore from them
+# instead of starting empty if the ipset is ever missing.
+if [ -n "${ipset_v4}" ]; then
+    ${ipset_bin} save ${ipset_v4} -file "${backup_v4}" || echo "$0: Unable to save backup for ${ipset_v4} to ${backup_v4}" >&2
+fi
+
+if [ -n "${ipset_v6}" ]; then
+    ${ipset_bin} save ${ipset_v6} -file "${backup_v6}" || echo "$0: Unable to save backup for ${ipset_v6} to ${backup_v6}" >&2
+fi
 
 exit 0
