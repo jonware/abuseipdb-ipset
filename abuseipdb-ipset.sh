@@ -100,7 +100,7 @@ fi
 
 ### Query abuseipdb.com
 # Get the blocklist and store in an array
-_blocklist=( $(curl -fsS -G https://api.abuseipdb.com/api/v2/blocklist \
+_blocklist=( $(curl -fsS -G https://api.abuseipdb.com/api/v2/blacklist \
   -d confidenceMinimum=$confidence \
   -d plaintext \
   "${extra_curl_opts[@]}" \
